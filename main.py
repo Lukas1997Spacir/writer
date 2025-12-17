@@ -122,6 +122,14 @@ def regenerate_chapter(project, chapter_index, model_cfg):
     chapter["text"] = new_text
 
 # =========================
+# FUNKCE PRO REFRESH (nahrazuje experimental_rerun)
+# =========================
+
+def refresh_ui():
+    st.session_state["refresh"] = not st.session_state.get("refresh", False)
+    st.stop()
+
+# =========================
 # STREAMLIT UI
 # =========================
 
@@ -144,7 +152,7 @@ if selected_project == "— nový —":
             "characters": [],
             "chapters": []
         })
-        st.experimental_rerun()
+        refresh_ui()
 else:
     project = load_project(selected_project)
 
@@ -175,7 +183,7 @@ else:
         if st.button("Přidat postavu"):
             project["characters"].append({"name": name, "description": desc})
             save_project(selected_project, project)
-            st.experimental_rerun()
+            refresh_ui()
 
     # -------------------------
     # KAPITOLY
@@ -197,12 +205,12 @@ else:
                 if st.button(f"Smazat kapitolu {i+1}", key=f"del_{i}"):
                     project["chapters"].pop(i)
                     save_project(selected_project, project)
-                    st.experimental_rerun()
+                    refresh_ui()
             with col2:
                 if st.button(f"Regenerovat kapitolu {i+1}", key=f"regen_{i}"):
                     regenerate_chapter(project, i, selected_model)
                     save_project(selected_project, project)
-                    st.experimental_rerun()
+                    refresh_ui()
             with col3:
                 if st.button(f"Přidat verzi jako samostatnou {i+1}", key=f"copy_{i}"):
                     project["chapters"].append({
@@ -211,7 +219,7 @@ else:
                         "versions": chapter.get("versions", [chapter["text"]])
                     })
                     save_project(selected_project, project)
-                    st.experimental_rerun()
+                    refresh_ui()
 
     # -------------------------
     # NOVÁ KAPITOLA
@@ -229,4 +237,4 @@ else:
             "versions": [chapter_text]
         })
         save_project(selected_project, project)
-        st.experimental_rerun()
+        refresh_ui()
