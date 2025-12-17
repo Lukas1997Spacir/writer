@@ -177,7 +177,14 @@ else:
     st.subheader("🎭 Postavy")
     with st.expander("Správa postav"):
         for i, char in enumerate(project["characters"]):
-            st.markdown(f"**{char['name']}** – {char['description']}")
+            col1, col2 = st.columns([4,1])
+            with col1:
+                st.markdown(f"**{char['name']}** – {char['description']}")
+            with col2:
+                if st.button("❌ Smazat", key=f"del_char_{i}"):
+                    project["characters"].pop(i)
+                    save_project(selected_project, project)
+                    refresh_ui()
         name = st.text_input("Jméno postavy")
         desc = st.text_area("Popis (vzhled, povaha, vztahy)")
         if st.button("Přidat postavu"):
