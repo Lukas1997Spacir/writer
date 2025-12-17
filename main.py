@@ -1,7 +1,6 @@
 import streamlit as st
-import json, os, io, base64
+import json, os, io, requests
 from datetime import datetime
-import requests
 from PIL import Image
 
 # =========================
@@ -88,7 +87,7 @@ def generate_chapter(prompt, model_cfg):
         return f"CHYBA při generování kapitoly: {e}"
 
 # =========================
-# GENEROVÁNÍ OBRÁZKŮ (OpenRouter chat completions)
+# GENEROVÁNÍ OBRÁZKŮ
 # =========================
 def generate_image(prompt: str):
     api_key = st.secrets.get("OPENROUTER_API_KEY")
@@ -108,7 +107,6 @@ def generate_image(prompt: str):
         r = requests.post(url, headers=headers, json=payload, timeout=300)
         r.raise_for_status()
         result = r.json()
-        # získání URL první generované ilustrace
         if result.get("choices") and result["choices"][0]["message"].get("images"):
             image_url = result["choices"][0]["message"]["images"][0]["image_url"]["url"]
             img_data = requests.get(image_url).content
@@ -163,51 +161,12 @@ else:
     project = load_project(selected_project)
 
     # -------------------------
-    # EXPORT
-    # -------------------------
-    st.sidebar.header("📄 Export")
-    if st.sidebar.button("Exportovat projekt jako .txt", key="export_txt"):
-        output = io.StringIO()
-        output.write(f"Kniha: {selected_project}\n\n")
-        output.write("=== Postavy ===\n")
-        for c in project["characters"]:
-            output.write(f"- {c['name']}: {c['description']}\n")
-        output.write("\n=== Děj ===\n")
-        for i, ch in enumerate(project["chapters"]):
-            output.write(f"Kapitola {i+1}: {ch['text']}\n\n")
-        st.download_button("Stáhnout .txt", data=output.getvalue(), file_name=f"{selected_project}.txt", mime="text/plain")
-
-    # -------------------------
-    # MODEL
-    # -------------------------
-    st.sidebar.header("🤖 AI Model")
-    selected_label = st.sidebar.selectbox("Vyber model", [m["label"] for m in MODELS], key="model_select")
-    selected_model = next(m for m in MODELS if m["label"] == selected_label)
-
-    st.sidebar.header("⚙️ Nastavení generování")
-    temperature = st.sidebar.slider("Kreativita (teplota)", 0.1, 1.5, 0.9, 0.1, key="temp_slider")
-    max_tokens = st.sidebar.slider("Délka kapitoly (tokeny)", 500, 4000, 1500, 100, key="tokens_slider")
-    selected_model["temperature"] = temperature
-    selected_model["max_tokens"] = max_tokens
-
-    # -------------------------
-    # PLOT
-    # -------------------------
-    st.subheader("📝 Plot knihy")
-    plot_text = st.text_area("Zadej základní děj / plot knihy", value=project.get("plot", ""), key="book_plot")
-    if st.button("Uložit plot", key="save_plot"):
-        project["plot"] = plot_text
-        save_project(selected_project, project)
-        st.success("Plot uložen!")
-        safe_refresh()
-
-    # -------------------------
-    # POSTAVY
+    # POSTAVY S NÁHRÁVÁNÍM OBRÁZKŮ Z PC
     # -------------------------
     st.subheader("🎭 Postavy")
     with st.expander("Správa postav"):
         for i, char in enumerate(project["characters"]):
-            col1, col2, col3 = st.columns([3,1,1])
+            col1, col2, col3, col4 = st.columns([3,1,1,1])
             with col1:
                 st.markdown(f"**{char['name']}** – {char['description']}")
                 if "image" in char:
@@ -218,79 +177,34 @@ else:
                     save_project(selected_project, project)
                     safe_refresh()
             with col3:
-                if st.button("🖼️ Obrázek", key=f"img_char_{i}"):
+                if st.button("🖼️ Generovat obrázek", key=f"gen_char_img_{i}"):
                     prompt = f"Illustration of {char['name']}, {char['description']}, realistic, detailed, high quality"
                     img = generate_image(prompt)
                     if img:
                         char["image"] = img
                         save_project(selected_project, project)
                         safe_refresh()
-
-    name = st.text_input("Jméno postavy", key="new_char_name")
-    desc = st.text_area("Popis (vzhled, povaha, vztahy)", key="new_char_desc")
-    if st.button("Přidat postavu", key="add_char"):
-        project["characters"].append({"name": name, "description": desc})
-        save_project(selected_project, project)
-        safe_refresh()
+            with col4:
+                uploaded_file = st.file_uploader(f"Nahrát obrázek pro {char['name']}", type=["png","jpg","jpeg"], key=f"upload_char_{i}")
+                if uploaded_file:
+                    img = Image.open(uploaded_file)
+                    char["image"] = img
+                    save_project(selected_project, project)
+                    st.success(f"Obrázek pro {char['name']} byl nahrán.")
+                    safe_refresh()
 
     # -------------------------
-    # KAPITOLY
+    # KAPITOLY S NÁHRÁVÁNÍM OBRÁZKŮ Z PC
     # -------------------------
     st.subheader("📑 Kapitoly")
     for i, chapter in enumerate(project["chapters"]):
         with st.expander(f"Kapitola {i+1}"):
-            versions = chapter.get("versions", [chapter["text"]])
-            selected_version = st.selectbox("Verze kapitoly", range(len(versions)), format_func=lambda x: f"Verze {x+1}", key=f"chapter_{i}_version")
-            st.text_area("Text kapitoly", versions[selected_version], height=300, key=f"chapter_{i}_text")
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                if st.button(f"Smazat kapitolu {i+1}", key=f"del_{i}"):
-                    project["chapters"].pop(i)
+            col1, col2, col3, col4, col5 = st.columns(5)
+            with col5:
+                uploaded_file = st.file_uploader(f"Nahrát obrázek pro kapitolu {i+1}", type=["png","jpg","jpeg"], key=f"upload_chapter_{i}")
+                if uploaded_file:
+                    img = Image.open(uploaded_file)
+                    chapter["image"] = img
                     save_project(selected_project, project)
+                    st.success(f"Obrázek pro kapitolu {i+1} byl nahrán.")
                     safe_refresh()
-            with col2:
-                if st.button(f"Regenerovat kapitolu {i+1}", key=f"regen_{i}"):
-                    regenerate_chapter(project, i, selected_model)
-                    save_project(selected_project, project)
-                    safe_refresh()
-            with col3:
-                if st.button(f"Přidat verzi jako samostatnou {i+1}", key=f"copy_{i}"):
-                    project["chapters"].append({
-                        "instruction": chapter["instruction"],
-                        "text": chapter["text"],
-                        "versions": chapter.get("versions", [chapter["text"]])
-                    })
-                    save_project(selected_project, project)
-                    safe_refresh()
-            with col4:
-                if st.button(f"🖼️ Obrázek kapitoly {i+1}", key=f"img_chapter_{i}"):
-                    char_desc = "\n".join([f"{c['name']} looks like [image]" if "image" in c else f"{c['name']}: {c['description']}" for c in project["characters"]])
-                    prompt = f"{chapter['text']}\nPostavy:\n{char_desc}\nHighly detailed, cinematic, realistic, full color"
-                    img = generate_image(prompt)
-                    if img:
-                        chapter["image"] = img
-                        st.image(img, caption=f"Kapitola {i+1}")
-                        save_project(selected_project, project)
-
-    # -------------------------
-    # NOVÁ KAPITOLA
-    # -------------------------
-    if "new_chapter" not in st.session_state:
-        st.session_state["new_chapter"] = None
-
-    st.subheader("✍️ Nová kapitola")
-    chapter_instruction = st.text_area("Popis děje kapitoly", height=150, key="new_chapter_instr")
-    if st.button("Vygenerovat kapitolu", key="gen_chapter"):
-        prompt = build_prompt(project, chapter_instruction)
-        chapter_text = generate_chapter(prompt, selected_model)
-        st.session_state["new_chapter"] = {"instruction": chapter_instruction, "text": chapter_text, "versions": [chapter_text]}
-
-    if st.session_state["new_chapter"]:
-        new_ch = st.session_state["new_chapter"]
-        st.text_area("✅ Vygenerovaná kapitola", new_ch["text"], height=300)
-        if st.button("Uložit kapitolu do projektu"):
-            project["chapters"].append(new_ch)
-            save_project(selected_project, project)
-            st.session_state["new_chapter"] = None
-            st.success("Kapitola uložena do projektu!")
-            safe_refresh()
