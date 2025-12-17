@@ -144,7 +144,7 @@ def generate_image(prompt: str):
         st.error("OPENROUTER_API_KEY není nastaven v secrets.toml")
         return None
 
-    url = "https://openrouter.ai/v1/images/generations"
+    url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
