@@ -1,21 +1,14 @@
 {
   "models": [
     {
-      "label": "GPT-4o (OpenAI)",
+      "label": "OpenRouter GPT-4.1-mini",
       "provider": "openai",
-      "endpoint": "https://api.openai.com/v1/chat/completions",
-      "model": "gpt-4o",
-      "api_key_env": "OPENAI_API_KEY"
+      "endpoint": "https://api.openrouter.com/v1/chat/completions",
+      "model": "gpt-4.1-mini",
+      "api_key_env": "OPENROUTER_API_KEY"
     },
     {
-      "label": "GPT-4.1",
-      "provider": "openai",
-      "endpoint": "https://api.openai.com/v1/chat/completions",
-      "model": "gpt-4.1",
-      "api_key_env": "OPENAI_API_KEY"
-    },
-    {
-      "label": "Ollama – llama3",
+      "label": "Ollama Llama3",
       "provider": "ollama",
       "endpoint": "http://localhost:11434/api/generate",
       "model": "llama3"
