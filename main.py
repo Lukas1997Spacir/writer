@@ -274,21 +274,38 @@ else:
                     save_project(selected_project, project)
                     safe_refresh()
 
-    # -------------------------
-    # NOVÁ KAPITOLA
-    # -------------------------
+# =========================
+# NOVÁ KAPITOLA – okamžité zobrazení
+# =========================
 
-    st.subheader("✍️ Nová kapitola")
-    chapter_instruction = st.text_area("Popis děje kapitoly (co se má stát)", height=150, key="new_chapter_instr")
+if "new_chapter" not in st.session_state:
+    st.session_state["new_chapter"] = None
 
-    if st.button("Vygenerovat kapitolu", key="gen_chapter"):
-        prompt = build_prompt(project, chapter_instruction)
-        chapter_text = generate_chapter(prompt, selected_model)
-        project["chapters"].append({
-            "instruction": chapter_instruction,
-            "text": chapter_text,
-            "versions": [chapter_text]
-        })
+st.subheader("✍️ Nová kapitola")
+chapter_instruction = st.text_area(
+    "Popis děje kapitoly (co se má stát)",
+    height=150,
+    key="new_chapter_instr"
+)
+
+# Generování kapitoly
+if st.button("Vygenerovat kapitolu", key="gen_chapter"):
+    prompt = build_prompt(project, chapter_instruction)
+    chapter_text = generate_chapter(prompt, selected_model)
+    # uložíme do session_state pro okamžité zobrazení
+    st.session_state["new_chapter"] = {
+        "instruction": chapter_instruction,
+        "text": chapter_text,
+        "versions": [chapter_text]
+    }
+
+# Zobrazení nově vygenerované kapitoly
+if st.session_state["new_chapter"]:
+    new_ch = st.session_state["new_chapter"]
+    st.text_area("✅ Vygenerovaná kapitola", new_ch["text"], height=300)
+    if st.button("Uložit kapitolu do projektu"):
+        project["chapters"].append(new_ch)
         save_project(selected_project, project)
-        st.success("Kapitola vygenerována!")
+        st.session_state["new_chapter"] = None
+        st.success("Kapitola uložena do projektu!")
         safe_refresh()
