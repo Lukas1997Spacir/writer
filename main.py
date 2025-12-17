@@ -135,22 +135,37 @@ def regenerate_chapter(project, chapter_index, model_cfg):
 # =========================
 
 def generate_image(prompt: str):
-    url = "https://openrouter.ai/api/v1/chat/completions"
-    headers = {"Authorization": f"Bearer {st.secrets['SOURCEFUL_API_KEY']}"}
-    payload = {
-        "model": "sourceful/riverflow-v2-max-preview",
-        "prompt": prompt,
-        "size": "1024x1024"
+    """
+    Generuje obrázek přes OpenRouter / OpenAI (endpoint gpt-image-1).
+    Vrací PIL Image.
+    """
+    api_key = st.secrets.get("OPENROUTER_API_KEY")
+    if not api_key:
+        st.error("OPENROUTER_API_KEY není nastaven v secrets.toml")
+        return None
+
+    url = "https://openrouter.ai/v1/images/generations"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
     }
+    payload = {
+        "model": "gpt-image-1",
+        "prompt": prompt,
+        "size": "1024x1024",  # může být "512x512" nebo "256x256"
+        "n": 1
+    }
+
     try:
         r = requests.post(url, json=payload, headers=headers, timeout=300)
         r.raise_for_status()
-        img_data = r.json()["image_base64"]
-        img = Image.open(BytesIO(base64.b64decode(img_data)))
+        img_b64 = r.json()["data"][0]["b64_json"]
+        img = Image.open(io.BytesIO(base64.b64decode(img_b64)))
         return img
     except requests.exceptions.RequestException as e:
         st.error(f"CHYBA při generování obrázku: {e}")
         return None
+
 
 # =========================
 # BEZPEČNÝ REFRESH
