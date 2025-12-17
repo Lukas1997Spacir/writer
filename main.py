@@ -52,7 +52,6 @@ Plán knihy:
 {plot}
 
 Jsi profesionální český spisovatel beletrie.
-Píšeš román žánru SOAP OPERA pro dospělé.
 
 === POSTAVY (MUSÍ ZŮSTAT KONZISTENTNÍ) ===
 {characters}
