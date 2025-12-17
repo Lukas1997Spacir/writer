@@ -4,6 +4,9 @@ import os
 from datetime import datetime
 import requests
 import io
+import base64
+from PIL import Image
+from io import BytesIO
 
 # =========================
 # KONFIGURACE
@@ -52,6 +55,7 @@ Plán knihy:
 {plot}
 
 Jsi profesionální český spisovatel beletrie.
+Píšeš román žánru SOAP OPERA pro dospělé.
 
 === POSTAVY (MUSÍ ZŮSTAT KONZISTENTNÍ) ===
 {characters}
@@ -63,7 +67,7 @@ Jsi profesionální český spisovatel beletrie.
 {chapter_instruction}
 
 Napiš plnohodnotnou kapitolu v češtině.
-Dbej na kontinuitu děje, konzistenci postav, dramatické dialogy a emocionální hloubku. Nepiš nic jako číslo, nebo název kapitoly, ani "konec kapitoly".
+Dbej na kontinuitu děje, konzistenci postav, dramatické dialogy a emocionální hloubku.
 """
     return prompt.strip()
 
@@ -127,7 +131,29 @@ def regenerate_chapter(project, chapter_index, model_cfg):
     chapter["text"] = new_text
 
 # =========================
-# FUNKCE PRO BEZPEČNÝ REFRESH
+# GENEROVÁNÍ OBRÁZKŮ
+# =========================
+
+def generate_image(prompt: str):
+    url = "https://api.sourceful.com/v1/generate"
+    headers = {"Authorization": f"Bearer {st.secrets['SOURCEFUL_API_KEY']}"}
+    payload = {
+        "model": "sourceful/riverflow-v2-max-preview",
+        "prompt": prompt,
+        "size": "1024x1024"
+    }
+    try:
+        r = requests.post(url, json=payload, headers=headers, timeout=300)
+        r.raise_for_status()
+        img_data = r.json()["image_base64"]
+        img = Image.open(BytesIO(base64.b64decode(img_data)))
+        return img
+    except requests.exceptions.RequestException as e:
+        st.error(f"CHYBA při generování obrázku: {e}")
+        return None
+
+# =========================
+# BEZPEČNÝ REFRESH
 # =========================
 
 def safe_refresh():
@@ -159,7 +185,7 @@ else:
     project = load_project(selected_project)
 
     # -------------------------
-    # EXPORT PROJEKTU
+    # EXPORT
     # -------------------------
 
     st.sidebar.header("📄 Export")
@@ -180,7 +206,7 @@ else:
         )
 
     # -------------------------
-    # MODEL + NASTAVENÍ
+    # MODEL
     # -------------------------
 
     st.sidebar.header("🤖 AI Model")
@@ -194,7 +220,7 @@ else:
     selected_model["max_tokens"] = max_tokens
 
     # -------------------------
-    # PLOT KNIHY
+    # PLOT
     # -------------------------
 
     st.subheader("📝 Plot knihy")
@@ -216,20 +242,31 @@ else:
     st.subheader("🎭 Postavy")
     with st.expander("Správa postav"):
         for i, char in enumerate(project["characters"]):
-            col1, col2 = st.columns([4,1])
+            col1, col2, col3 = st.columns([3,1,1])
             with col1:
                 st.markdown(f"**{char['name']}** – {char['description']}")
+                if "image" in char:
+                    st.image(char["image"], caption=char["name"], use_column_width=True)
             with col2:
                 if st.button("❌ Smazat", key=f"del_char_{i}"):
                     project["characters"].pop(i)
                     save_project(selected_project, project)
                     safe_refresh()
-        name = st.text_input("Jméno postavy", key="new_char_name")
-        desc = st.text_area("Popis (vzhled, povaha, vztahy)", key="new_char_desc")
-        if st.button("Přidat postavu", key="add_char"):
-            project["characters"].append({"name": name, "description": desc})
-            save_project(selected_project, project)
-            safe_refresh()
+            with col3:
+                if st.button("🖼️ Obrázek", key=f"img_char_{i}"):
+                    prompt = f"Illustration of {char['name']}, {char['description']}, realistic, detailed, high quality"
+                    img = generate_image(prompt)
+                    if img:
+                        char["image"] = img
+                        save_project(selected_project, project)
+                        safe_refresh()
+
+    name = st.text_input("Jméno postavy", key="new_char_name")
+    desc = st.text_area("Popis (vzhled, povaha, vztahy)", key="new_char_desc")
+    if st.button("Přidat postavu", key="add_char"):
+        project["characters"].append({"name": name, "description": desc})
+        save_project(selected_project, project)
+        safe_refresh()
 
     # -------------------------
     # KAPITOLY
@@ -252,7 +289,7 @@ else:
                 key=f"chapter_{i}_text"
             )
 
-            col1, col2, col3 = st.columns(3)
+            col1, col2, col3, col4 = st.columns(4)
             with col1:
                 if st.button(f"Smazat kapitolu {i+1}", key=f"del_{i}"):
                     project["chapters"].pop(i)
@@ -272,39 +309,44 @@ else:
                     })
                     save_project(selected_project, project)
                     safe_refresh()
+            with col4:
+                if st.button(f"🖼️ Obrázek kapitoly {i+1}", key=f"img_chapter_{i}"):
+                    char_descriptions = "\n".join([
+                        f"{c['name']} looks like [image]" if "image" in c else f"{c['name']}: {c['description']}"
+                        for c in project["characters"]
+                    ])
+                    prompt = f"{chapter['text']}\nPostavy:\n{char_descriptions}\nHighly detailed, cinematic, realistic, full color"
+                    img = generate_image(prompt)
+                    if img:
+                        chapter["image"] = img
+                        st.image(img, caption=f"Kapitola {i+1}")
+                        save_project(selected_project, project)
 
-# =========================
-# NOVÁ KAPITOLA – okamžité zobrazení
-# =========================
+    # -------------------------
+    # NOVÁ KAPITOLA – okamžité zobrazení
+    # -------------------------
 
-if "new_chapter" not in st.session_state:
-    st.session_state["new_chapter"] = None
-
-st.subheader("✍️ Nová kapitola")
-chapter_instruction = st.text_area(
-    "Popis děje kapitoly (co se má stát)",
-    height=150,
-    key="new_chapter_instr"
-)
-
-# Generování kapitoly
-if st.button("Vygenerovat kapitolu", key="gen_chapter"):
-    prompt = build_prompt(project, chapter_instruction)
-    chapter_text = generate_chapter(prompt, selected_model)
-    # uložíme do session_state pro okamžité zobrazení
-    st.session_state["new_chapter"] = {
-        "instruction": chapter_instruction,
-        "text": chapter_text,
-        "versions": [chapter_text]
-    }
-
-# Zobrazení nově vygenerované kapitoly
-if st.session_state["new_chapter"]:
-    new_ch = st.session_state["new_chapter"]
-    st.text_area("✅ Vygenerovaná kapitola", new_ch["text"], height=300)
-    if st.button("Uložit kapitolu do projektu"):
-        project["chapters"].append(new_ch)
-        save_project(selected_project, project)
+    if "new_chapter" not in st.session_state:
         st.session_state["new_chapter"] = None
-        st.success("Kapitola uložena do projektu!")
-        safe_refresh()
+
+    st.subheader("✍️ Nová kapitola")
+    chapter_instruction = st.text_area("Popis děje kapitoly (co se má stát)", height=150, key="new_chapter_instr")
+
+    if st.button("Vygenerovat kapitolu", key="gen_chapter"):
+        prompt = build_prompt(project, chapter_instruction)
+        chapter_text = generate_chapter(prompt, selected_model)
+        st.session_state["new_chapter"] = {
+            "instruction": chapter_instruction,
+            "text": chapter_text,
+            "versions": [chapter_text]
+        }
+
+    if st.session_state["new_chapter"]:
+        new_ch = st.session_state["new_chapter"]
+        st.text_area("✅ Vygenerovaná kapitola", new_ch["text"], height=300)
+        if st.button("Uložit kapitolu do projektu"):
+            project["chapters"].append(new_ch)
+            save_project(selected_project, project)
+            st.session_state["new_chapter"] = None
+            st.success("Kapitola uložena do projektu!")
+            safe_refresh()
