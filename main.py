@@ -3,6 +3,7 @@ import json
 import os
 from datetime import datetime
 import requests
+import io
 
 # =========================
 # KONFIGURACE
@@ -45,7 +46,11 @@ def save_project(project_name, data):
 def build_prompt(project, chapter_instruction):
     characters = "\n".join([f"- {c['name']}: {c['description']}" for c in project["characters"]])
     previous_chapters = "\n\n".join([f"Kapitola {i+1}:\n{ch['text']}" for i, ch in enumerate(project["chapters"])])
+    plot = project.get("plot", "")
     prompt = f"""
+Plán knihy:
+{plot}
+
 Jsi profesionální český spisovatel beletrie.
 Píšeš román žánru SOAP OPERA pro dospělé.
 
@@ -80,7 +85,6 @@ def call_openai(prompt, cfg):
     api_key = st.secrets.get(cfg.get("api_key_env"))
     if not api_key:
         return "CHYBA: API klíč není v secrets."
-
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
@@ -124,14 +128,6 @@ def regenerate_chapter(project, chapter_index, model_cfg):
     chapter["text"] = new_text
 
 # =========================
-# FUNKCE PRO REFRESH
-# =========================
-
-def refresh_ui():
-    st.session_state["refresh"] = not st.session_state.get("refresh", False)
-    st.stop()
-
-# =========================
 # STREAMLIT UI
 # =========================
 
@@ -148,26 +144,62 @@ selected_project = st.sidebar.selectbox("Vyber projekt", ["— nový —"] + pro
 
 if selected_project == "— nový —":
     new_name = st.sidebar.text_input("Název nové knihy")
-    if st.sidebar.button("Vytvořit projekt"):
+    if st.sidebar.button("Vytvořit projekt", key="create_proj"):
         if new_name:
-            save_project(new_name, {"created": str(datetime.now()), "characters": [], "chapters": []})
-            refresh_ui()
+            save_project(new_name, {"created": str(datetime.now()), "characters": [], "chapters": [], "plot": ""})
+            st.experimental_rerun()
 else:
     project = load_project(selected_project)
+
+    # -------------------------
+    # EXPORT PROJEKTU
+    # -------------------------
+
+    st.sidebar.header("📄 Export")
+    if st.sidebar.button("Exportovat projekt jako .txt", key="export_txt"):
+        output = io.StringIO()
+        output.write(f"Kniha: {selected_project}\n\n")
+        output.write("=== Postavy ===\n")
+        for c in project["characters"]:
+            output.write(f"- {c['name']}: {c['description']}\n")
+        output.write("\n=== Děj ===\n")
+        for i, ch in enumerate(project["chapters"]):
+            output.write(f"Kapitola {i+1}: {ch['text']}\n\n")
+        st.download_button(
+            "Stáhnout .txt",
+            data=output.getvalue(),
+            file_name=f"{selected_project}.txt",
+            mime="text/plain"
+        )
 
     # -------------------------
     # MODEL + NASTAVENÍ
     # -------------------------
 
     st.sidebar.header("🤖 AI Model")
-    selected_label = st.sidebar.selectbox("Vyber model", MODEL_LABELS)
+    selected_label = st.sidebar.selectbox("Vyber model", MODEL_LABELS, key="model_select")
     selected_model = next(m for m in MODELS if m["label"] == selected_label)
 
     st.sidebar.header("⚙️ Nastavení generování")
-    temperature = st.sidebar.slider("Kreativita (teplota)", 0.1, 1.5, 0.9, 0.1)
-    max_tokens = st.sidebar.slider("Délka kapitoly (tokeny)", 500, 4000, 1500, 100)
+    temperature = st.sidebar.slider("Kreativita (teplota)", 0.1, 1.5, 0.9, 0.1, key="temp_slider")
+    max_tokens = st.sidebar.slider("Délka kapitoly (tokeny)", 500, 4000, 1500, 100, key="tokens_slider")
     selected_model["temperature"] = temperature
     selected_model["max_tokens"] = max_tokens
+
+    # -------------------------
+    # PLOT KNIHY
+    # -------------------------
+
+    st.subheader("📝 Plot knihy")
+    plot_text = st.text_area(
+        "Zadej základní děj / plot knihy (kde se odehrává, struktura, klíčové momenty)",
+        value=project.get("plot", ""),
+        key="book_plot"
+    )
+    if st.button("Uložit plot", key="save_plot"):
+        project["plot"] = plot_text
+        save_project(selected_project, project)
+        st.success("Plot uložen!")
 
     # -------------------------
     # POSTAVY
@@ -183,13 +215,13 @@ else:
                 if st.button("❌ Smazat", key=f"del_char_{i}"):
                     project["characters"].pop(i)
                     save_project(selected_project, project)
-                    refresh_ui()
+                    st.experimental_rerun()
         name = st.text_input("Jméno postavy", key="new_char_name")
         desc = st.text_area("Popis (vzhled, povaha, vztahy)", key="new_char_desc")
         if st.button("Přidat postavu", key="add_char"):
             project["characters"].append({"name": name, "description": desc})
             save_project(selected_project, project)
-            refresh_ui()
+            st.experimental_rerun()
 
     # -------------------------
     # KAPITOLY
@@ -217,12 +249,12 @@ else:
                 if st.button(f"Smazat kapitolu {i+1}", key=f"del_{i}"):
                     project["chapters"].pop(i)
                     save_project(selected_project, project)
-                    refresh_ui()
+                    st.experimental_rerun()
             with col2:
                 if st.button(f"Regenerovat kapitolu {i+1}", key=f"regen_{i}"):
                     regenerate_chapter(project, i, selected_model)
                     save_project(selected_project, project)
-                    refresh_ui()
+                    st.experimental_rerun()
             with col3:
                 if st.button(f"Přidat verzi jako samostatnou {i+1}", key=f"copy_{i}"):
                     project["chapters"].append({
@@ -231,7 +263,7 @@ else:
                         "versions": chapter.get("versions", [chapter["text"]])
                     })
                     save_project(selected_project, project)
-                    refresh_ui()
+                    st.experimental_rerun()
 
     # -------------------------
     # NOVÁ KAPITOLA
@@ -249,4 +281,5 @@ else:
             "versions": [chapter_text]
         })
         save_project(selected_project, project)
-        refresh_ui()
+        st.success("Kapitola vygenerována!")
+        st.experimental_rerun()
