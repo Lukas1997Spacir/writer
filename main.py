@@ -64,7 +64,7 @@ Píšeš román žánru SOAP OPERA pro dospělé.
 {chapter_instruction}
 
 Napiš plnohodnotnou kapitolu v češtině.
-Dbej na kontinuitu děje, konzistenci postav, dramatické dialogy a emocionální hloubku.
+Dbej na kontinuitu děje, konzistenci postav, dramatické dialogy a emocionální hloubku. Nepiš nic jako číslo, nebo název kapitoly, ani "konec kapitoly".
 """
     return prompt.strip()
 
