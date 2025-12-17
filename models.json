@@ -1,0 +1,24 @@
+{
+  "models": [
+    {
+      "label": "GPT-4o (OpenAI)",
+      "provider": "openai",
+      "endpoint": "https://api.openai.com/v1/chat/completions",
+      "model": "gpt-4o",
+      "api_key_env": "OPENAI_API_KEY"
+    },
+    {
+      "label": "GPT-4.1",
+      "provider": "openai",
+      "endpoint": "https://api.openai.com/v1/chat/completions",
+      "model": "gpt-4.1",
+      "api_key_env": "OPENAI_API_KEY"
+    },
+    {
+      "label": "Ollama – llama3",
+      "provider": "ollama",
+      "endpoint": "http://localhost:11434/api/generate",
+      "model": "llama3"
+    }
+  ]
+}
