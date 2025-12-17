@@ -6,21 +6,21 @@
       "endpoint": "https://openrouter.ai/api/v1/chat/completions",
       "model": "gpt-4.1-mini",
       "api_key_env": "OPENROUTER_API_KEY"
-    }
+    },
     {
       "label": "allenai/olmo-3.1-32b-think:free",
       "provider": "openai",
       "endpoint": "https://openrouter.ai/api/v1/chat/completions",
       "model": "gpt-4.1-mini",
       "api_key_env": "OPENROUTER_API_KEY"
-    }
+    },
     {
       "label": "openai/gpt-oss-120b:free",
       "provider": "openai",
       "endpoint": "https://openrouter.ai/api/v1/chat/completions",
       "model": "gpt-4.1-mini",
       "api_key_env": "OPENROUTER_API_KEY"
-    }
+    },
     {
       "label": "cognitivecomputations/dolphin-mistral-24b-venice-edition:free",
       "provider": "openai",
