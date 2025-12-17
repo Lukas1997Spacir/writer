@@ -3,7 +3,7 @@
     {
       "label": "OpenRouter GPT-4.1-mini",
       "provider": "openai",
-      "endpoint": "https://api.openrouter.com/v1/chat/completions",
+      "endpoint": "https://openrouter.ai/api/v1/chat/completions",
       "model": "gpt-4.1-mini",
       "api_key_env": "OPENROUTER_API_KEY"
     }
