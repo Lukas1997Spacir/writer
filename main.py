@@ -94,19 +94,21 @@ def call_openai(prompt, cfg):
         "temperature": cfg.get("temperature", 0.9),
         "max_tokens": cfg.get("max_tokens", 1500)
     }
-    r = requests.post(cfg["endpoint"], headers=headers, json=payload, timeout=120)
-    r.raise_for_status()
-    return r.json()["choices"][0]["message"]["content"]
+    try:
+        r = requests.post(cfg["endpoint"], headers=headers, json=payload, timeout=300)
+        r.raise_for_status()
+        return r.json()["choices"][0]["message"]["content"]
+    except requests.exceptions.RequestException as e:
+        return f"CHYBA: Nelze se připojit k API: {e}"
 
 def call_ollama(prompt, cfg):
-    payload = {
-        "model": cfg["model"],
-        "prompt": prompt,
-        "stream": False
-    }
-    r = requests.post(cfg["endpoint"], json=payload, timeout=300)
-    r.raise_for_status()
-    return r.json()["response"]
+    try:
+        payload = {"model": cfg["model"], "prompt": prompt, "stream": False}
+        r = requests.post(cfg["endpoint"], json=payload, timeout=300)
+        r.raise_for_status()
+        return r.json()["response"]
+    except requests.exceptions.RequestException as e:
+        return f"CHYBA: Nelze se připojit k Ollama endpointu: {e}"
 
 # =========================
 # REGENERACE KAPITOLY
@@ -122,7 +124,7 @@ def regenerate_chapter(project, chapter_index, model_cfg):
     chapter["text"] = new_text
 
 # =========================
-# FUNKCE PRO REFRESH (nahrazuje experimental_rerun)
+# FUNKCE PRO REFRESH
 # =========================
 
 def refresh_ui():
@@ -146,13 +148,10 @@ selected_project = st.sidebar.selectbox("Vyber projekt", ["— nový —"] + pro
 
 if selected_project == "— nový —":
     new_name = st.sidebar.text_input("Název nové knihy")
-    if st.sidebar.button("Vytvořit projekt") and new_name:
-        save_project(new_name, {
-            "created": str(datetime.now()),
-            "characters": [],
-            "chapters": []
-        })
-        refresh_ui()
+    if st.sidebar.button("Vytvořit projekt"):
+        if new_name:
+            save_project(new_name, {"created": str(datetime.now()), "characters": [], "chapters": []})
+            refresh_ui()
 else:
     project = load_project(selected_project)
 
@@ -185,9 +184,9 @@ else:
                     project["characters"].pop(i)
                     save_project(selected_project, project)
                     refresh_ui()
-        name = st.text_input("Jméno postavy")
-        desc = st.text_area("Popis (vzhled, povaha, vztahy)")
-        if st.button("Přidat postavu"):
+        name = st.text_input("Jméno postavy", key="new_char_name")
+        desc = st.text_area("Popis (vzhled, povaha, vztahy)", key="new_char_desc")
+        if st.button("Přidat postavu", key="add_char"):
             project["characters"].append({"name": name, "description": desc})
             save_project(selected_project, project)
             refresh_ui()
@@ -203,9 +202,15 @@ else:
             selected_version = st.selectbox(
                 "Verze kapitoly",
                 range(len(versions)),
-                format_func=lambda i: f"Verze {i+1}"
+                format_func=lambda x: f"Verze {x+1}",
+                key=f"chapter_{i}_version"
             )
-            st.text_area("Text kapitoly", versions[selected_version], height=300)
+            st.text_area(
+                "Text kapitoly",
+                versions[selected_version],
+                height=300,
+                key=f"chapter_{i}_text"
+            )
 
             col1, col2, col3 = st.columns(3)
             with col1:
@@ -233,9 +238,9 @@ else:
     # -------------------------
 
     st.subheader("✍️ Nová kapitola")
-    chapter_instruction = st.text_area("Popis děje kapitoly (co se má stát)", height=150)
+    chapter_instruction = st.text_area("Popis děje kapitoly (co se má stát)", height=150, key="new_chapter_instr")
 
-    if st.button("Vygenerovat kapitolu"):
+    if st.button("Vygenerovat kapitolu", key="gen_chapter"):
         prompt = build_prompt(project, chapter_instruction)
         chapter_text = generate_chapter(prompt, selected_model)
         project["chapters"].append({
