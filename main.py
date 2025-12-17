@@ -128,6 +128,14 @@ def regenerate_chapter(project, chapter_index, model_cfg):
     chapter["text"] = new_text
 
 # =========================
+# FUNKCE PRO BEZPEČNÝ REFRESH
+# =========================
+
+def safe_refresh():
+    st.session_state["refresh"] = not st.session_state.get("refresh", False)
+    st.stop()
+
+# =========================
 # STREAMLIT UI
 # =========================
 
@@ -147,7 +155,7 @@ if selected_project == "— nový —":
     if st.sidebar.button("Vytvořit projekt", key="create_proj"):
         if new_name:
             save_project(new_name, {"created": str(datetime.now()), "characters": [], "chapters": [], "plot": ""})
-            st.experimental_rerun()
+            safe_refresh()
 else:
     project = load_project(selected_project)
 
@@ -177,7 +185,7 @@ else:
     # -------------------------
 
     st.sidebar.header("🤖 AI Model")
-    selected_label = st.sidebar.selectbox("Vyber model", MODEL_LABELS, key="model_select")
+    selected_label = st.sidebar.selectbox("Vyber model", [m["label"] for m in MODELS], key="model_select")
     selected_model = next(m for m in MODELS if m["label"] == selected_label)
 
     st.sidebar.header("⚙️ Nastavení generování")
@@ -200,6 +208,7 @@ else:
         project["plot"] = plot_text
         save_project(selected_project, project)
         st.success("Plot uložen!")
+        safe_refresh()
 
     # -------------------------
     # POSTAVY
@@ -215,13 +224,13 @@ else:
                 if st.button("❌ Smazat", key=f"del_char_{i}"):
                     project["characters"].pop(i)
                     save_project(selected_project, project)
-                    st.experimental_rerun()
+                    safe_refresh()
         name = st.text_input("Jméno postavy", key="new_char_name")
         desc = st.text_area("Popis (vzhled, povaha, vztahy)", key="new_char_desc")
         if st.button("Přidat postavu", key="add_char"):
             project["characters"].append({"name": name, "description": desc})
             save_project(selected_project, project)
-            st.experimental_rerun()
+            safe_refresh()
 
     # -------------------------
     # KAPITOLY
@@ -249,12 +258,12 @@ else:
                 if st.button(f"Smazat kapitolu {i+1}", key=f"del_{i}"):
                     project["chapters"].pop(i)
                     save_project(selected_project, project)
-                    st.experimental_rerun()
+                    safe_refresh()
             with col2:
                 if st.button(f"Regenerovat kapitolu {i+1}", key=f"regen_{i}"):
                     regenerate_chapter(project, i, selected_model)
                     save_project(selected_project, project)
-                    st.experimental_rerun()
+                    safe_refresh()
             with col3:
                 if st.button(f"Přidat verzi jako samostatnou {i+1}", key=f"copy_{i}"):
                     project["chapters"].append({
@@ -263,7 +272,7 @@ else:
                         "versions": chapter.get("versions", [chapter["text"]])
                     })
                     save_project(selected_project, project)
-                    st.experimental_rerun()
+                    safe_refresh()
 
     # -------------------------
     # NOVÁ KAPITOLA
@@ -282,4 +291,4 @@ else:
         })
         save_project(selected_project, project)
         st.success("Kapitola vygenerována!")
-        st.experimental_rerun()
+        safe_refresh()
