@@ -136,7 +136,7 @@ def regenerate_chapter(project, chapter_index, model_cfg):
 
 def generate_image(prompt: str):
     url = "https://api.sourceful.com/v1/generate"
-    headers = {"Authorization": f"Bearer {st.secrets['SOURCEFUL_API_KEY']}"}
+    headers = {"Authorization": f"Bearer {st.secrets['api_key_env']}"}
     payload = {
         "model": "sourceful/riverflow-v2-max-preview",
         "prompt": prompt,
