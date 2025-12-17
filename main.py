@@ -1,17 +1,12 @@
 import streamlit as st
-import json
-import os
+import json, os, io, base64
 from datetime import datetime
 import requests
-import io
-import base64
 from PIL import Image
-from io import BytesIO
 
 # =========================
 # KONFIGURACE
 # =========================
-
 DATA_DIR = "data"
 PROJECTS_DIR = os.path.join(DATA_DIR, "projects")
 os.makedirs(PROJECTS_DIR, exist_ok=True)
@@ -19,7 +14,6 @@ os.makedirs(PROJECTS_DIR, exist_ok=True)
 # =========================
 # NAČTENÍ MODELŮ
 # =========================
-
 def load_models():
     with open("models.json", "r", encoding="utf-8") as f:
         return json.load(f)["models"]
@@ -30,19 +24,18 @@ MODEL_LABELS = [m["label"] for m in MODELS]
 # =========================
 # POMOCNÉ FUNKCE
 # =========================
-
 def list_projects():
     return [f.replace(".json", "") for f in os.listdir(PROJECTS_DIR) if f.endswith(".json")]
 
-def load_project(project_name):
-    path = os.path.join(PROJECTS_DIR, f"{project_name}.json")
+def load_project(name):
+    path = os.path.join(PROJECTS_DIR, f"{name}.json")
     if not os.path.exists(path):
         return None
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
-def save_project(project_name, data):
-    path = os.path.join(PROJECTS_DIR, f"{project_name}.json")
+def save_project(name, data):
+    path = os.path.join(PROJECTS_DIR, f"{name}.json")
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
@@ -72,55 +65,65 @@ Dbej na kontinuitu děje, konzistenci postav, dramatické dialogy a emocionáln�
     return prompt.strip()
 
 # =========================
-# VOLÁNÍ MODELŮ
+# VOLÁNÍ TEXTOVÉHO MODELU (OpenRouter)
 # =========================
-
 def generate_chapter(prompt, model_cfg):
-    provider = model_cfg["provider"]
-    if provider == "openai":
-        return call_openai(prompt, model_cfg)
-    elif provider == "ollama":
-        return call_ollama(prompt, model_cfg)
-    else:
-        raise ValueError("Neznámý provider")
-
-def call_openai(prompt, cfg):
-    api_key = st.secrets.get(cfg.get("api_key_env"))
+    api_key = st.secrets.get(model_cfg.get("api_key_env"))
     if not api_key:
         return "CHYBA: API klíč není v secrets."
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     payload = {
-        "model": cfg["model"],
-        "messages": [
-            {"role": "system", "content": "Jsi český spisovatel beletrie."},
-            {"role": "user", "content": prompt}
-        ],
-        "temperature": cfg.get("temperature", 0.9),
-        "max_tokens": cfg.get("max_tokens", 1500)
+        "model": model_cfg["model"],
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": model_cfg.get("temperature", 0.9),
+        "max_tokens": model_cfg.get("max_tokens", 1500)
     }
     try:
-        r = requests.post(cfg["endpoint"], headers=headers, json=payload, timeout=300)
+        r = requests.post(url, headers=headers, json=payload, timeout=300)
         r.raise_for_status()
-        return r.json()["choices"][0]["message"]["content"]
-    except requests.exceptions.RequestException as e:
-        return f"CHYBA: Nelze se připojit k API: {e}"
+        result = r.json()
+        return result["choices"][0]["message"]["content"]
+    except Exception as e:
+        return f"CHYBA při generování kapitoly: {e}"
 
-def call_ollama(prompt, cfg):
+# =========================
+# GENEROVÁNÍ OBRÁZKŮ (OpenRouter chat completions)
+# =========================
+def generate_image(prompt: str):
+    api_key = st.secrets.get("OPENROUTER_API_KEY")
+    if not api_key:
+        st.error("OPENROUTER_API_KEY není nastaven v secrets.toml")
+        return None
+
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    payload = {
+        "model": "sourceful/riverflow-v2-fast-preview",
+        "messages": [{"role": "user", "content": prompt}],
+        "modalities": ["image", "text"]
+    }
+
     try:
-        payload = {"model": cfg["model"], "prompt": prompt, "stream": False}
-        r = requests.post(cfg["endpoint"], json=payload, timeout=300)
+        r = requests.post(url, headers=headers, json=payload, timeout=300)
         r.raise_for_status()
-        return r.json()["response"]
-    except requests.exceptions.RequestException as e:
-        return f"CHYBA: Nelze se připojit k Ollama endpointu: {e}"
+        result = r.json()
+        # získání URL první generované ilustrace
+        if result.get("choices") and result["choices"][0]["message"].get("images"):
+            image_url = result["choices"][0]["message"]["images"][0]["image_url"]["url"]
+            img_data = requests.get(image_url).content
+            img = Image.open(io.BytesIO(img_data))
+            return img
+        else:
+            st.warning("Žádný obrázek nebyl vygenerován.")
+            return None
+    except Exception as e:
+        st.error(f"CHYBA při generování obrázku: {e}")
+        return None
 
 # =========================
 # REGENERACE KAPITOLY
 # =========================
-
 def regenerate_chapter(project, chapter_index, model_cfg):
     chapter = project["chapters"][chapter_index]
     prompt = build_prompt(project, chapter["instruction"])
@@ -131,46 +134,8 @@ def regenerate_chapter(project, chapter_index, model_cfg):
     chapter["text"] = new_text
 
 # =========================
-# GENEROVÁNÍ OBRÁZKŮ
+# SAFE REFRESH
 # =========================
-
-def generate_image(prompt: str):
-    """
-    Generuje obrázek přes OpenRouter / OpenAI (endpoint gpt-image-1).
-    Vrací PIL Image.
-    """
-    api_key = st.secrets.get("OPENROUTER_API_KEY")
-    if not api_key:
-        st.error("OPENROUTER_API_KEY není nastaven v secrets.toml")
-        return None
-
-    url = "https://openrouter.ai/api/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "model": "gpt-image-1",
-        "prompt": prompt,
-        "size": "1024x1024",  # může být "512x512" nebo "256x256"
-        "n": 1
-    }
-
-    try:
-        r = requests.post(url, json=payload, headers=headers, timeout=300)
-        r.raise_for_status()
-        img_b64 = r.json()["data"][0]["b64_json"]
-        img = Image.open(io.BytesIO(base64.b64decode(img_b64)))
-        return img
-    except requests.exceptions.RequestException as e:
-        st.error(f"CHYBA při generování obrázku: {e}")
-        return None
-
-
-# =========================
-# BEZPEČNÝ REFRESH
-# =========================
-
 def safe_refresh():
     st.session_state["refresh"] = not st.session_state.get("refresh", False)
     st.stop()
@@ -178,14 +143,12 @@ def safe_refresh():
 # =========================
 # STREAMLIT UI
 # =========================
-
 st.set_page_config(page_title="AI Romanopisec", layout="wide")
 st.title("📖 AI Romanopisec – česká beletrie")
 
 # -------------------------
 # PROJEKTY
 # -------------------------
-
 st.sidebar.header("📚 Projekty")
 projects = list_projects()
 selected_project = st.sidebar.selectbox("Vyber projekt", ["— nový —"] + projects)
@@ -202,7 +165,6 @@ else:
     # -------------------------
     # EXPORT
     # -------------------------
-
     st.sidebar.header("📄 Export")
     if st.sidebar.button("Exportovat projekt jako .txt", key="export_txt"):
         output = io.StringIO()
@@ -213,17 +175,11 @@ else:
         output.write("\n=== Děj ===\n")
         for i, ch in enumerate(project["chapters"]):
             output.write(f"Kapitola {i+1}: {ch['text']}\n\n")
-        st.download_button(
-            "Stáhnout .txt",
-            data=output.getvalue(),
-            file_name=f"{selected_project}.txt",
-            mime="text/plain"
-        )
+        st.download_button("Stáhnout .txt", data=output.getvalue(), file_name=f"{selected_project}.txt", mime="text/plain")
 
     # -------------------------
     # MODEL
     # -------------------------
-
     st.sidebar.header("🤖 AI Model")
     selected_label = st.sidebar.selectbox("Vyber model", [m["label"] for m in MODELS], key="model_select")
     selected_model = next(m for m in MODELS if m["label"] == selected_label)
@@ -237,13 +193,8 @@ else:
     # -------------------------
     # PLOT
     # -------------------------
-
     st.subheader("📝 Plot knihy")
-    plot_text = st.text_area(
-        "Zadej základní děj / plot knihy (kde se odehrává, struktura, klíčové momenty)",
-        value=project.get("plot", ""),
-        key="book_plot"
-    )
+    plot_text = st.text_area("Zadej základní děj / plot knihy", value=project.get("plot", ""), key="book_plot")
     if st.button("Uložit plot", key="save_plot"):
         project["plot"] = plot_text
         save_project(selected_project, project)
@@ -253,7 +204,6 @@ else:
     # -------------------------
     # POSTAVY
     # -------------------------
-
     st.subheader("🎭 Postavy")
     with st.expander("Správa postav"):
         for i, char in enumerate(project["characters"]):
@@ -286,24 +236,12 @@ else:
     # -------------------------
     # KAPITOLY
     # -------------------------
-
     st.subheader("📑 Kapitoly")
     for i, chapter in enumerate(project["chapters"]):
         with st.expander(f"Kapitola {i+1}"):
             versions = chapter.get("versions", [chapter["text"]])
-            selected_version = st.selectbox(
-                "Verze kapitoly",
-                range(len(versions)),
-                format_func=lambda x: f"Verze {x+1}",
-                key=f"chapter_{i}_version"
-            )
-            st.text_area(
-                "Text kapitoly",
-                versions[selected_version],
-                height=300,
-                key=f"chapter_{i}_text"
-            )
-
+            selected_version = st.selectbox("Verze kapitoly", range(len(versions)), format_func=lambda x: f"Verze {x+1}", key=f"chapter_{i}_version")
+            st.text_area("Text kapitoly", versions[selected_version], height=300, key=f"chapter_{i}_text")
             col1, col2, col3, col4 = st.columns(4)
             with col1:
                 if st.button(f"Smazat kapitolu {i+1}", key=f"del_{i}"):
@@ -326,11 +264,8 @@ else:
                     safe_refresh()
             with col4:
                 if st.button(f"🖼️ Obrázek kapitoly {i+1}", key=f"img_chapter_{i}"):
-                    char_descriptions = "\n".join([
-                        f"{c['name']} looks like [image]" if "image" in c else f"{c['name']}: {c['description']}"
-                        for c in project["characters"]
-                    ])
-                    prompt = f"{chapter['text']}\nPostavy:\n{char_descriptions}\nHighly detailed, cinematic, realistic, full color"
+                    char_desc = "\n".join([f"{c['name']} looks like [image]" if "image" in c else f"{c['name']}: {c['description']}" for c in project["characters"]])
+                    prompt = f"{chapter['text']}\nPostavy:\n{char_desc}\nHighly detailed, cinematic, realistic, full color"
                     img = generate_image(prompt)
                     if img:
                         chapter["image"] = img
@@ -338,23 +273,17 @@ else:
                         save_project(selected_project, project)
 
     # -------------------------
-    # NOVÁ KAPITOLA – okamžité zobrazení
+    # NOVÁ KAPITOLA
     # -------------------------
-
     if "new_chapter" not in st.session_state:
         st.session_state["new_chapter"] = None
 
     st.subheader("✍️ Nová kapitola")
-    chapter_instruction = st.text_area("Popis děje kapitoly (co se má stát)", height=150, key="new_chapter_instr")
-
+    chapter_instruction = st.text_area("Popis děje kapitoly", height=150, key="new_chapter_instr")
     if st.button("Vygenerovat kapitolu", key="gen_chapter"):
         prompt = build_prompt(project, chapter_instruction)
         chapter_text = generate_chapter(prompt, selected_model)
-        st.session_state["new_chapter"] = {
-            "instruction": chapter_instruction,
-            "text": chapter_text,
-            "versions": [chapter_text]
-        }
+        st.session_state["new_chapter"] = {"instruction": chapter_instruction, "text": chapter_text, "versions": [chapter_text]}
 
     if st.session_state["new_chapter"]:
         new_ch = st.session_state["new_chapter"]
